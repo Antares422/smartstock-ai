@@ -1,0 +1,96 @@
+@startuml backtest-flow
+
+skinparam nodesep 30
+skinparam ranksep 40
+skinparam dpi 200
+skinparam shadowing false
+
+skinparam {
+    BackgroundColor white
+    BorderColor #1565C0
+    ArrowColor #1565C0
+    DefaultFontColor #2C3E50
+    
+    NoteBackgroundColor #E3F2FD
+    NoteBorderColor #1565C0
+    
+    ComponentBackgroundColor #E3F2FD
+    RectangleBackgroundColor #E3F2FD
+    DatabaseBackgroundColor #E3F2FD
+    QueueBackgroundColor #E3F2FD
+    StorageBackgroundColor #E3F2FD
+    CloudBackgroundColor #E3F2FD
+    
+    ParticipantBackgroundColor #E3F2FD
+    ActorBackgroundColor #E3F2FD
+    
+    ClassBackgroundColor #E3F2FD
+}
+
+title 策略回测流程
+
+actor "用户" as user
+participant "BacktestController" as controller
+participant "BacktestService" as service
+participant "StrategyEngine" as strategy
+participant "BacktestEngine" as engine
+database "MySQL" as mysql
+participant "MinIO" as minio <<storage>>
+
+user -> controller : POST /backtest/run\n{strategyId, stockCode, startDate, endDate}
+
+== 加载策略 ==
+controller -> service : runBacktest(request)
+service -> mysql : SELECT * FROM strategies\nWHERE id = ?
+mysql --> service : 策略配置\n{type: 'ma', params: {short: 5, long: 20}}
+
+== 加载历史数据 ==
+service -> mysql : SELECT * FROM stock_prices\nWHERE stock_code = ?\nAND trade_date BETWEEN ? AND ?
+mysql --> service : 历史价格数据\n[{date, open, close, high, low, volume}...]
+
+== 初始化回测引擎 ==
+service -> engine : initialize(initialCapital, data)
+engine -> engine : 初始化账户\n- 现金：1,000,000\n- 持仓：0
+
+== 执行回测 ==
+loop 遍历每个交易日
+    engine -> strategy : generateSignal(currentData, params)
+    note right
+      策略逻辑示例（均线策略）：
+      - 计算 5 日均线和 20 日均线
+      - 如果短期均线上穿长期均线 -> 买入信号
+      - 如果短期均线下穿长期均线 -> 卖出信号
+    end note
+    strategy --> engine : 返回信号\n{action: 'buy'/'sell'/'hold'}
+
+    alt 买入信号 && 有足够资金
+        engine -> engine : 执行买入\n- 扣除资金\n- 增加持仓\n- 记录交易
+    else 卖出信号 && 有持仓
+        engine -> engine : 执行卖出\n- 增加资金\n- 减少持仓\n- 记录交易
+    else 持有信号
+        engine -> engine : 不操作
+    end
+
+    engine -> engine : 更新账户市值\n= 现金 + 持仓市值
+    engine -> engine : 记录净值曲线
+end
+
+== 计算回测指标 ==
+engine -> engine : 计算收益率\n= (最终资金 - 初始资金) / 初始资金
+engine -> engine : 计算最大回撤\n= max((峰值 - 当前值) / 峰值)
+engine -> engine : 计算夏普比率\n= (年化收益率 - 无风险利率) / 年化波动率
+engine -> engine : 计算胜率\n= 盈利交易次数 / 总交易次数
+
+== 生成回测报告 ==
+engine -> engine : 生成报告数据\n- 收益曲线图\n- 交易记录明细\n- 风险指标
+service -> minio : 上传报告文件\nPUT /smartstock-reports/backtest_{id}.pdf
+minio --> service : 返回文件 URL
+
+== 保存回测结果 ==
+service -> mysql : INSERT INTO backtest_results\n(strategy_id, stock_code, start_date, end_date,\ninitial_capital, final_capital, total_return,\nreturn_rate, max_drawdown, sharpe_ratio,\nwin_rate, trade_count, report_url)
+mysql --> service : 保存成功
+
+service --> controller : 返回回测结果
+controller --> user : 200 回测完成\n{backtestId, returnRate, maxDrawdown,\nsharpeRatio, winRate, tradeCount, reportUrl}
+
+@enduml

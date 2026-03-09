@@ -1,0 +1,251 @@
+@startuml class-diagram
+
+skinparam nodesep 30
+skinparam ranksep 40
+skinparam dpi 200
+skinparam shadowing false
+skinparam linetype ortho
+skinparam shadowing false
+
+skinparam {
+    BackgroundColor white
+    BorderColor #1565C0
+    ArrowColor #1565C0
+    DefaultFontColor #2C3E50
+    
+    NoteBackgroundColor #E3F2FD
+    NoteBorderColor #1565C0
+    
+    ComponentBackgroundColor #E3F2FD
+    RectangleBackgroundColor #E3F2FD
+    DatabaseBackgroundColor #E3F2FD
+    QueueBackgroundColor #E3F2FD
+    StorageBackgroundColor #E3F2FD
+    CloudBackgroundColor #E3F2FD
+    
+    ParticipantBackgroundColor #E3F2FD
+    ActorBackgroundColor #E3F2FD
+    
+    ClassBackgroundColor #E3F2FD
+}
+
+title 核心服务类图
+
+package "Controller 层" {
+    class TradeController {
+        - TradeService tradeService
+        --
+        + buyStock(request): Result
+        + sellStock(request): Result
+        + getPositions(): Result
+        + getTradeRecords(): Result
+    }
+
+    class MarketController {
+        - MarketService marketService
+        --
+        + searchStocks(keyword): Result
+        + getStockDetail(stockCode): Result
+        + getKlineData(stockCode, period): Result
+        + getIndicators(stockCode, indicators): Result
+    }
+
+    class AiController {
+        - AiService aiService
+        --
+        + analyzeMarket(stockCode): Result
+        + askQuestion(question): Result
+        + getNewsSentiment(stockCode): Result
+    }
+}
+
+package "Service 层" {
+    class TradeService {
+        - AccountService accountService
+        - OrderService orderService
+        - PositionService positionService
+        - TradeRecordMapper tradeRecordMapper
+        --
+        + buyStock(userId, request): Order
+        + sellStock(userId, request): Order
+        + getPositions(userId): List<Position>
+        + getTradeRecords(userId, query): Page<TradeRecord>
+        - validateBuyRequest(request): void
+        - validateSellRequest(request): void
+        - calculateFee(amount): BigDecimal
+    }
+
+    class AccountService {
+        - AccountMapper accountMapper
+        - RedisUtil redisUtil
+        --
+        + getAccount(userId): Account
+        + checkBalance(userId, amount): boolean
+        + freezeCash(userId, amount): void
+        + releaseFrozenCash(userId, amount): void
+        + updateTotalAssets(userId): void
+        + calculateProfitRate(userId): BigDecimal
+    }
+
+    class OrderService {
+        - OrderMapper orderMapper
+        --
+        + createOrder(order): Long
+        + fillOrder(orderId): void
+        + cancelOrder(orderId): void
+        + getOrderById(orderId): Order
+        + getOrdersByUser(userId): List<Order>
+    }
+
+    class PositionService {
+        - PositionMapper positionMapper
+        - MarketService marketService
+        --
+        + updatePosition(userId, stockCode, quantity, price): void
+        + getPositions(userId): List<Position>
+        + getPosition(userId, stockCode): Position
+        + updateCurrentPrice(userId, stockCode): void
+        + calculateProfit(position): BigDecimal
+    }
+
+    class MarketService {
+        - StockApiClient stockApiClient
+        - StockPriceMapper stockPriceMapper
+        - RedisUtil redisUtil
+        - KafkaProducer kafkaProducer
+        --
+        + searchStocks(keyword): List<Stock>
+        + getStockDetail(stockCode): StockDetail
+        + getKlineData(stockCode, period, limit): List<Kline>
+        + calculateIndicators(stockCode, indicators): Map
+        + getCurrentPrice(stockCode): BigDecimal
+        - fetchFromApi(stockCode): StockData
+        - cachePrice(stockCode, price): void
+    }
+
+    class AiService {
+        - ClaudeClient claudeClient
+        - IndicatorCalculator indicatorCalculator
+        - NewsAnalyzer newsAnalyzer
+        - AiAnalysisMapper aiAnalysisMapper
+        --
+        + analyzeMarket(userId, stockCode): String
+        + askQuestion(userId, question): String
+        + analyzeNewsSentiment(stockCode): SentimentResult
+        - buildPrompt(stockCode, data): String
+        - callClaudeApi(prompt): String
+        - saveAnalysis(userId, stockCode, result): void
+    }
+
+    class BacktestService {
+        - StrategyEngine strategyEngine
+        - BacktestEngine backtestEngine
+        - BacktestResultMapper backtestResultMapper
+        - MinioClient minioClient
+        --
+        + createStrategy(userId, strategy): Long
+        + runBacktest(strategyId, request): BacktestResult
+        + getBacktestResult(backtestId): BacktestResult
+        + optimizeParameters(strategyId): Strategy
+        - loadHistoricalData(stockCode, startDate, endDate): List<Price>
+        - generateReport(result): String
+        - uploadReport(report): String
+    }
+}
+
+package "Mapper 层" {
+    interface AccountMapper {
+        + selectById(id): Account
+        + updateById(account): int
+        + insert(account): int
+    }
+
+    interface OrderMapper {
+        + selectById(id): Order
+        + insert(order): int
+        + updateById(order): int
+        + selectByUserId(userId): List<Order>
+    }
+
+    interface PositionMapper {
+        + selectByUserIdAndStockCode(userId, stockCode): Position
+        + insert(position): int
+        + updateById(position): int
+        + selectByUserId(userId): List<Position>
+    }
+
+    interface StockPriceMapper {
+        + selectByStockCodeAndDate(stockCode, date): StockPrice
+        + selectByStockCodeAndDateRange(stockCode, startDate, endDate): List<StockPrice>
+        + batchInsert(prices): int
+    }
+}
+
+package "Entity 层" {
+    class Account {
+        - Long id
+        - Long userId
+        - BigDecimal totalAssets
+        - BigDecimal availableCash
+        - BigDecimal frozenCash
+        - BigDecimal positionValue
+        - BigDecimal totalProfit
+        - BigDecimal profitRate
+        - LocalDateTime createdAt
+        - LocalDateTime updatedAt
+    }
+
+    class Order {
+        - Long id
+        - Long userId
+        - String stockCode
+        - String orderType
+        - BigDecimal price
+        - Integer quantity
+        - BigDecimal amount
+        - BigDecimal fee
+        - String status
+        - BigDecimal filledPrice
+        - Integer filledQuantity
+        - LocalDateTime filledTime
+        - LocalDateTime createdAt
+        - LocalDateTime updatedAt
+    }
+
+    class Position {
+        - Long id
+        - Long userId
+        - String stockCode
+        - Integer quantity
+        - Integer availableQuantity
+        - BigDecimal costPrice
+        - BigDecimal currentPrice
+        - BigDecimal marketValue
+        - BigDecimal profit
+        - BigDecimal profitRate
+        - LocalDateTime createdAt
+        - LocalDateTime updatedAt
+    }
+}
+
+' 关系定义
+TradeController --> TradeService
+MarketController --> MarketService
+AiController --> AiService
+
+TradeService --> AccountService
+TradeService --> OrderService
+TradeService --> PositionService
+TradeService --> TradeRecordMapper
+
+AccountService --> AccountMapper
+OrderService --> OrderMapper
+PositionService --> PositionMapper
+PositionService --> MarketService
+MarketService --> StockPriceMapper
+
+AccountMapper ..> Account : <<create>>
+OrderMapper ..> Order : <<create>>
+PositionMapper ..> Position : <<create>>
+
+@enduml

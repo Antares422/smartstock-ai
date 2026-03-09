@@ -1,0 +1,116 @@
+@startuml user-interaction
+
+skinparam nodesep 30
+skinparam ranksep 40
+skinparam dpi 200
+skinparam shadowing false
+
+skinparam {
+    BackgroundColor white
+    BorderColor #1565C0
+    ArrowColor #1565C0
+    DefaultFontColor #2C3E50
+    
+    NoteBackgroundColor #E3F2FD
+    NoteBorderColor #1565C0
+    
+    ComponentBackgroundColor #E3F2FD
+    RectangleBackgroundColor #E3F2FD
+    DatabaseBackgroundColor #E3F2FD
+    QueueBackgroundColor #E3F2FD
+    StorageBackgroundColor #E3F2FD
+    CloudBackgroundColor #E3F2FD
+    
+    ParticipantBackgroundColor #E3F2FD
+    ActorBackgroundColor #E3F2FD
+    
+    ClassBackgroundColor #E3F2FD
+}
+
+title 用户交互流程 - 查看行情并买入股票
+
+actor "用户" as user
+participant "前端\nVue 3" as frontend
+participant "API 网关\nGateway" as gateway
+participant "行情服务\nMarketService" as market
+participant "交易服务\nTradeService" as trade
+database "Redis" as redis
+database "MySQL" as mysql
+
+== 用户登录 ==
+user -> frontend : 输入账号密码
+frontend -> gateway : POST /api/auth/login
+gateway -> gateway : 验证账号密码
+gateway --> frontend : 返回 JWT Token
+frontend -> frontend : 保存 Token 到 LocalStorage
+
+== 查看自选股 ==
+user -> frontend : 进入首页
+frontend -> gateway : GET /api/watchlist\nAuthorization: Bearer {token}
+gateway -> gateway : 验证 Token
+gateway -> market : 转发请求
+market -> redis : 获取自选股实时价格
+redis --> market : 返回价格数据
+market --> gateway : 返回自选股列表
+gateway --> frontend : 返回数据
+frontend -> frontend : 渲染自选股列表
+
+== WebSocket 实时推送 ==
+frontend -> gateway : WebSocket 连接\nws://localhost:8080/ws/market
+gateway -> market : 建立 WebSocket 连接
+frontend -> market : 订阅自选股\n{type: "subscribe", stocks: ["600519"]}
+market -> redis : 订阅 Redis Pub/Sub
+loop 实时推送
+    redis -> market : 价格更新消息
+    market -> frontend : 推送最新价格\n{stockCode: "600519", price: 1850.00}
+    frontend -> frontend : 更新页面显示
+end
+
+== 查看股票详情 ==
+user -> frontend : 点击"贵州茅台"
+frontend -> gateway : GET /api/market/stocks/600519
+gateway -> market : 转发请求
+market -> redis : 查询缓存
+alt 缓存命中
+    redis --> market : 返回缓存数据
+else 缓存未命中
+    market -> mysql : 查询数据库
+    mysql --> market : 返回股票信息
+    market -> redis : 更新缓存
+end
+market --> gateway : 返回股票详情
+gateway --> frontend : 返回数据
+frontend -> frontend : 渲染 K 线图、技术指标
+
+== 买入股票 ==
+user -> frontend : 点击"买入"按钮\n输入价格 1850、数量 100
+frontend -> frontend : 计算买入金额\n= 1850 × 100 + 手续费
+frontend -> gateway : POST /api/trade/buy\n{stockCode: "600519", price: 1850, quantity: 100}
+gateway -> gateway : 验证 Token
+gateway -> trade : 转发请求
+
+trade -> trade : 校验参数
+trade -> mysql : 查询账户余额
+mysql --> trade : 返回账户信息
+trade -> trade : 检查资金是否足够
+
+alt 资金不足
+    trade --> gateway : 400 资金不足
+    gateway --> frontend : 返回错误
+    frontend -> user : 提示"资金不足"
+else 资金充足
+    trade -> mysql : 创建订单（状态：pending）
+    trade -> mysql : 冻结资金
+    trade -> trade : 模拟成交
+    trade -> mysql : 更新订单状态（已成交）
+    trade -> mysql : 更新持仓
+    trade -> mysql : 释放冻结资金
+    trade -> mysql : 记录交易记录
+    mysql --> trade : 操作成功
+    trade --> gateway : 200 买入成功
+    gateway --> frontend : 返回订单信息
+    frontend -> user : 提示"买入成功"
+    frontend -> frontend : 刷新账户余额和持仓
+end
+
+@enduml

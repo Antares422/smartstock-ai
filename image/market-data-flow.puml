@@ -1,0 +1,74 @@
+@startuml market-data-flow
+
+skinparam nodesep 30
+skinparam ranksep 40
+skinparam dpi 200
+skinparam shadowing false
+
+skinparam {
+    BackgroundColor white
+    BorderColor #1565C0
+    ArrowColor #1565C0
+    DefaultFontColor #2C3E50
+    
+    NoteBackgroundColor #E3F2FD
+    NoteBorderColor #1565C0
+    
+    ComponentBackgroundColor #E3F2FD
+    RectangleBackgroundColor #E3F2FD
+    DatabaseBackgroundColor #E3F2FD
+    QueueBackgroundColor #E3F2FD
+    StorageBackgroundColor #E3F2FD
+    CloudBackgroundColor #E3F2FD
+    
+    ParticipantBackgroundColor #E3F2FD
+    ActorBackgroundColor #E3F2FD
+    
+    ClassBackgroundColor #E3F2FD
+}
+
+title 行情数据流处理流程
+
+actor "第三方行情 API" as api
+participant "StockApiClient\n定时拉取" as client
+queue "Kafka\nstock-price-updates" as kafka
+participant "KafkaConsumer\n消费者" as consumer
+database "Redis\n缓存" as redis
+database "MySQL\n持久化" as mysql
+participant "WebSocket\n推送服务" as websocket
+actor "前端用户" as user
+
+== 行情数据拉取 ==
+client -> api : 定时拉取行情数据\n(每 3 秒)
+api --> client : 返回最新价格
+
+== 数据发布到 Kafka ==
+client -> kafka : 发布行情消息\n{stockCode, price, volume...}
+note right
+  消息格式：
+  {
+    "stockCode": "600519",
+    "price": 1850.00,
+    "changeRate": 2.5,
+    "volume": 1234567,
+    "timestamp": "2026-03-09T10:30:00"
+  }
+end note
+
+== 消费者处理 ==
+kafka -> consumer : 消费行情消息
+consumer -> redis : 更新缓存\nKEY: stock:600519\nTTL: 5秒
+consumer -> mysql : 批量写入数据库\n(每 10 秒一次)
+
+== 实时推送 ==
+consumer -> websocket : 通知有新数据
+websocket -> user : WebSocket 推送\n实时更新价格
+
+note over redis
+  缓存结构：
+  - stock:{code} -> 最新价格
+  - stock:{code}:kline:day -> 日K线数据
+  - stock:{code}:indicators -> 技术指标
+end note
+
+@enduml

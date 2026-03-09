@@ -1,0 +1,95 @@
+@startuml trade-flow
+
+skinparam nodesep 30
+skinparam ranksep 40
+skinparam dpi 200
+skinparam shadowing false
+
+skinparam {
+    BackgroundColor white
+    BorderColor #1565C0
+    ArrowColor #1565C0
+    DefaultFontColor #2C3E50
+    
+    NoteBackgroundColor #E3F2FD
+    NoteBorderColor #1565C0
+    
+    ComponentBackgroundColor #E3F2FD
+    RectangleBackgroundColor #E3F2FD
+    DatabaseBackgroundColor #E3F2FD
+    QueueBackgroundColor #E3F2FD
+    StorageBackgroundColor #E3F2FD
+    CloudBackgroundColor #E3F2FD
+    
+    ParticipantBackgroundColor #E3F2FD
+    ActorBackgroundColor #E3F2FD
+    
+    ClassBackgroundColor #E3F2FD
+}
+
+title 模拟交易流程（买入）
+
+actor "用户" as user
+participant "TradeController" as controller
+participant "TradeService" as service
+participant "AccountService" as account
+participant "OrderService" as order
+participant "PositionService" as position
+database "MySQL" as db
+
+user -> controller : POST /trade/buy\n{stockCode, price, quantity}
+
+== 参数校验 ==
+controller -> controller : 校验参数\n- 价格合法性\n- 数量是否100的整数倍
+alt 参数错误
+    controller --> user : 400 参数错误
+end
+
+== 资金检查 ==
+controller -> service : buyStock(request)
+service -> account : checkBalance(userId, amount)
+account -> db : 查询账户余额
+db --> account : 返回账户信息
+alt 资金不足
+    account --> service : 抛出 InsufficientFundsException
+    service --> controller : 异常
+    controller --> user : 400 资金不足
+end
+
+== 创建订单 ==
+service -> order : createOrder(buyRequest)
+order -> db : INSERT INTO orders\n状态：pending
+db --> order : 订单ID
+
+== 冻结资金 ==
+service -> account : freezeCash(userId, amount)
+account -> db : UPDATE accounts\nSET available_cash = available_cash - amount\nSET frozen_cash = frozen_cash + amount
+db --> account : 更新成功
+
+== 模拟成交 ==
+service -> order : fillOrder(orderId)
+note right
+  模拟成交逻辑：
+  - 限价单：价格合适立即成交
+  - 市价单：按当前价成交
+end note
+order -> db : UPDATE orders\nSET status = 'filled'\nSET filled_time = NOW()
+
+== 更新持仓 ==
+service -> position : updatePosition(userId, stockCode, quantity, price)
+position -> db : INSERT INTO positions\nON DUPLICATE KEY UPDATE\nquantity = quantity + ?,\ncost_price = (cost_price * old_quantity + price * quantity) / (old_quantity + quantity)
+db --> position : 更新成功
+
+== 释放冻结资金 ==
+service -> account : releaseFrozenCash(userId, amount)
+account -> db : UPDATE accounts\nSET frozen_cash = frozen_cash - amount
+db --> account : 更新成功
+
+== 记录交易 ==
+service -> db : INSERT INTO trade_records\n(user_id, order_id, stock_code, trade_type, price, quantity, amount, fee)
+db --> service : 记录成功
+
+service --> controller : 返回订单信息
+controller --> user : 200 买入成功\n{orderId, stockCode, price, quantity, amount, fee}
+
+@enduml

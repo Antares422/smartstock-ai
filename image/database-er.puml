@@ -1,0 +1,280 @@
+@startuml database-er
+
+' 设置样式
+skinparam linetype ortho
+skinparam nodesep 50
+skinparam ranksep 80
+skinparam dpi 200
+skinparam shadowing false
+
+skinparam shadowing false
+
+skinparam {
+    BackgroundColor white
+    BorderColor #1565C0
+    ArrowColor #1565C0
+    DefaultFontColor #2C3E50
+    
+    NoteBackgroundColor #E3F2FD
+    NoteBorderColor #1565C0
+    
+    ComponentBackgroundColor #E3F2FD
+    RectangleBackgroundColor #E3F2FD
+    DatabaseBackgroundColor #E3F2FD
+    QueueBackgroundColor #E3F2FD
+    StorageBackgroundColor #E3F2FD
+    CloudBackgroundColor #E3F2FD
+    
+    ParticipantBackgroundColor #E3F2FD
+    ActorBackgroundColor #E3F2FD
+    
+    ClassBackgroundColor #E3F2FD
+}
+
+title 智能股票交易辅助系统 - 数据库 ER 图
+
+' 用户模块
+entity "users" <<user>> {
+    * id : BIGINT <<PK>>
+    --
+    * username : VARCHAR(50)
+    * email : VARCHAR(100) <<UK>>
+    * phone : VARCHAR(20) <<UK>>
+    * password : VARCHAR(255)
+    nickname : VARCHAR(50)
+    avatar : VARCHAR(255)
+    status : TINYINT(1)
+    deleted : TINYINT(1)
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+entity "user_profiles" <<user>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    real_name : VARCHAR(50)
+    id_card : VARCHAR(18)
+    gender : TINYINT(1)
+    birthday : DATE
+    address : VARCHAR(255)
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+' 行情模块
+entity "stock_info" <<market>> {
+    * id : BIGINT <<PK>>
+    --
+    * stock_code : VARCHAR(10) <<UK>>
+    * stock_name : VARCHAR(50)
+    * market : VARCHAR(10)
+    industry : VARCHAR(50)
+    listing_date : DATE
+    status : TINYINT(1)
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+entity "stock_prices" <<market>> {
+    * id : BIGINT <<PK>>
+    --
+    * stock_code : VARCHAR(10) <<FK>>
+    * trade_date : DATE
+    * open_price : DECIMAL(10,2)
+    * close_price : DECIMAL(10,2)
+    * high_price : DECIMAL(10,2)
+    * low_price : DECIMAL(10,2)
+    * volume : BIGINT
+    * amount : DECIMAL(18,2)
+    change_rate : DECIMAL(10,4)
+    created_at : DATETIME
+}
+
+entity "user_watchlist" <<market>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * stock_code : VARCHAR(10) <<FK>>
+    sort_order : INT
+    created_at : DATETIME
+}
+
+' AI 模块
+entity "ai_analysis" <<ai>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * stock_code : VARCHAR(10)
+    * analysis_type : VARCHAR(20)
+    input_data : TEXT
+    output_text : TEXT
+    created_at : DATETIME
+}
+
+entity "news" <<ai>> {
+    * id : BIGINT <<PK>>
+    --
+    * title : VARCHAR(255)
+    content : TEXT
+    source : VARCHAR(100)
+    url : VARCHAR(500)
+    stock_code : VARCHAR(10)
+    sentiment : VARCHAR(20)
+    sentiment_score : DECIMAL(5,4)
+    publish_time : DATETIME
+    created_at : DATETIME
+}
+
+entity "qa_history" <<ai>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * question : TEXT
+    answer : TEXT
+    created_at : DATETIME
+}
+
+' 交易模块
+entity "accounts" <<trade>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>> <<UK>>
+    total_assets : DECIMAL(18,2)
+    available_cash : DECIMAL(18,2)
+    frozen_cash : DECIMAL(18,2)
+    position_value : DECIMAL(18,2)
+    total_profit : DECIMAL(18,2)
+    profit_rate : DECIMAL(10,4)
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+entity "orders" <<trade>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * stock_code : VARCHAR(10)
+    * order_type : VARCHAR(10)
+    * price : DECIMAL(10,2)
+    * quantity : INT
+    * amount : DECIMAL(18,2)
+    fee : DECIMAL(10,2)
+    status : VARCHAR(20)
+    filled_price : DECIMAL(10,2)
+    filled_quantity : INT
+    filled_time : DATETIME
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+entity "positions" <<trade>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * stock_code : VARCHAR(10)
+    * quantity : INT
+    available_quantity : INT
+    * cost_price : DECIMAL(10,2)
+    current_price : DECIMAL(10,2)
+    market_value : DECIMAL(18,2)
+    profit : DECIMAL(18,2)
+    profit_rate : DECIMAL(10,4)
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+entity "trade_records" <<trade>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * order_id : BIGINT <<FK>>
+    * stock_code : VARCHAR(10)
+    * trade_type : VARCHAR(10)
+    * price : DECIMAL(10,2)
+    * quantity : INT
+    * amount : DECIMAL(18,2)
+    fee : DECIMAL(10,2)
+    * trade_time : DATETIME
+    created_at : DATETIME
+}
+
+' 回测模块
+entity "strategies" <<backtest>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * strategy_name : VARCHAR(100)
+    * strategy_type : VARCHAR(50)
+    parameters : TEXT
+    initial_capital : DECIMAL(18,2)
+    description : TEXT
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+entity "backtest_results" <<backtest>> {
+    * id : BIGINT <<PK>>
+    --
+    * strategy_id : BIGINT <<FK>>
+    * stock_code : VARCHAR(10)
+    * start_date : DATE
+    * end_date : DATE
+    * initial_capital : DECIMAL(18,2)
+    * final_capital : DECIMAL(18,2)
+    * total_return : DECIMAL(18,2)
+    * return_rate : DECIMAL(10,4)
+    max_drawdown : DECIMAL(10,4)
+    sharpe_ratio : DECIMAL(10,4)
+    win_rate : DECIMAL(10,4)
+    trade_count : INT
+    report_url : VARCHAR(500)
+    created_at : DATETIME
+}
+
+' 风险模块
+entity "risk_alerts" <<risk>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * alert_type : VARCHAR(50)
+    * alert_level : VARCHAR(20)
+    * message : TEXT
+    is_read : TINYINT(1)
+    created_at : DATETIME
+}
+
+entity "stop_loss_profit" <<risk>> {
+    * id : BIGINT <<PK>>
+    --
+    * user_id : BIGINT <<FK>>
+    * stock_code : VARCHAR(10)
+    stop_loss_price : DECIMAL(10,2)
+    stop_profit_price : DECIMAL(10,2)
+    notify_method : VARCHAR(50)
+    is_enabled : TINYINT(1)
+    created_at : DATETIME
+    updated_at : DATETIME
+}
+
+' 关系定义
+users ||--o{ user_profiles : "1:1"
+users ||--o{ user_watchlist : "1:N"
+users ||--o{ ai_analysis : "1:N"
+users ||--o{ qa_history : "1:N"
+users ||--|| accounts : "1:1"
+users ||--o{ orders : "1:N"
+users ||--o{ positions : "1:N"
+users ||--o{ trade_records : "1:N"
+users ||--o{ strategies : "1:N"
+users ||--o{ risk_alerts : "1:N"
+users ||--o{ stop_loss_profit : "1:N"
+
+stock_info ||--o{ stock_prices : "1:N"
+stock_info ||--o{ user_watchlist : "1:N"
+
+orders ||--o{ trade_records : "1:N"
+
+strategies ||--o{ backtest_results : "1:N"
+
+@enduml
